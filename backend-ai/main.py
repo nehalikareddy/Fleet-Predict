@@ -8,6 +8,19 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import datetime
 import math
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if GEMINI_API_KEY:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    print(f"[Gemini] Client initialized with gemini-2.0-flash")
+else:
+    gemini_client = None
+    print("[WARN] GEMINI_API_KEY not set — dispatch generation will use fallback messages.")
 
 # Initialize FastAPI app
 app = fastapi.FastAPI()
@@ -123,6 +136,7 @@ class PredictRequest(BaseModel):
     route: str
     time: str   # format "HH:MM"
     weather_condition: str  # "clear", "light_rain", "heavy_rain", "storm"
+    scenario_id: str = None
 
 WEATHER_IMPACT = {
     "clear": 1.0,
@@ -137,55 +151,102 @@ RECOMMENDED_CAPACITY_BY_SEVERITY = {
     "low":    {"I-94": 20, "Highway-50": 6, "I-43": 4}
 }
 
+import random
+
 @app.post("/predict-disruption")
 def predict_disruption(request: PredictRequest):
-    # 1. Parse hour from request.time
+    if request.scenario_id == "detroit":
+        fleet = []
+        for i in range(12):
+            fleet.append({
+                "truck_id": f"Truck-DET-{10+i}",
+                "driver": f"Driver {i}",
+                "tier": "standard",
+                "weight_tons": 22,
+                "hours_driven": 5,
+                "deadline_hour": 19,
+                "status": "late" if i == 0 else "on_time",
+                "delay_mins": 45 if i == 0 else 0,
+                "assigned_route": "I-90-ALT-I-80" if i % 2 == 0 else "I-90",
+                "reactive_route": "I-90",
+                "reactive_status": "late",
+                "reactive_delay_mins": 45,
+                "scenario": "detroit",
+                "telematicsFlag": "engine_fault" if i == 0 else "clear",
+                "startLat": 42.33 + random.uniform(-0.04, 0.04),
+                "startLng": -83.04 + random.uniform(-0.04, 0.04)
+            })
+        return {
+            "disrupted": True,
+            "severity": 8,
+            "predicted_delay_mins": 45.0,
+            "historical_context": "Engine Fault detected on I-75 near Detroit. Rerouting 12 trucks via local arterials to maintain supply chain SLA.",
+            "predicted_speed_factor": 0.25,
+            "confidence": 0.95,
+            "affected_route": "I-90",
+            "recommended_capacity": {"I-90": 2, "I-80": 15},
+            "fleet": fleet
+        }
+        
+    elif request.scenario_id == "indianapolis":
+        fleet = []
+        for i in range(8):
+            fleet.append({
+                "truck_id": f"Truck-IND-{20+i}",
+                "driver": f"Driver {i}",
+                "tier": "bulk" if i % 2 == 0 else "standard",
+                "weight_tons": 40 if i % 2 == 0 else 15,
+                "hours_driven": 4,
+                "deadline_hour": 20,
+                "status": "on_time",
+                "delay_mins": 0,
+                "assigned_route": "I-74-HEAVY-DETOUR" if i % 2 == 0 else "I-74-LIGHT-SHORTCUT",
+                "reactive_route": "I-74-HEAVY-DETOUR",
+                "reactive_status": "late" if i % 2 != 0 else "on_time",
+                "reactive_delay_mins": 25 if i % 2 != 0 else 0,
+                "scenario": "indianapolis",
+                "telematicsFlag": "weight_restricted" if i % 2 == 0 else "weight_safe",
+                "startLat": 39.76 + random.uniform(-0.05, 0.05),
+                "startLng": -86.15 + random.uniform(-0.05, 0.05)
+            })
+        return {
+            "disrupted": True,
+            "severity": 6,
+            "predicted_delay_mins": 25.0,
+            "historical_context": "Weight Restriction enforced on I-70 bridge near Indianapolis. Fleet predictably distributed across I-74 and US-40.",
+            "predicted_speed_factor": 0.60,
+            "confidence": 0.88,
+            "affected_route": "I-74",
+            "recommended_capacity": {"I-74": 5, "I-74-LIGHT-SHORTCUT": 12},
+            "fleet": fleet
+        }
+
+    # Default Chicago behavior
     hour = int(request.time.split(":")[0])
-    
-    # 2. Get speed prediction from lightweight model
     base_speed = predict_speed_factor(request.route, hour)
-    
-    # 3. Apply weather multiplier
     weather_mult = WEATHER_IMPACT.get(request.weather_condition, 1.0)
     combined_speed = round(base_speed * weather_mult, 3)
-    
-    # 4. Calculate delay
-    base_travel_mins = 75  # Chicago to Milwaukee baseline
+    base_travel_mins = 75
     actual_travel_mins = base_travel_mins / max(combined_speed, 0.2)
     delay_mins = round(actual_travel_mins - base_travel_mins, 1)
-    
-    # 5. Determine severity
     severity = min(10, int(delay_mins / 6))
-    
-    # 6. Determine disruption
     disrupted = delay_mins > 15
-    
-    # 7. Get historical context via FAISS
     query = f"{request.route} {request.weather_condition} hour {hour}"
     historical_context = get_similar_incident(query)
     
-    # 8. Get capacity recommendation
-    if severity >= 7:
-        cap_tier = "high"
-    elif severity >= 4:
-        cap_tier = "medium"
-    else:
-        cap_tier = "low"
-    recommended_capacity = RECOMMENDED_CAPACITY_BY_SEVERITY[cap_tier]
+    if severity >= 7: cap_tier = "high"
+    elif severity >= 4: cap_tier = "medium"
+    else: cap_tier = "low"
     
-    # 9. Calculate confidence
-    confidence = round(min(0.97, 0.65 + (severity / 10) * 0.35), 2)
-    
-    # 10. Return
     return {
         "disrupted": disrupted,
         "severity": severity,
         "predicted_delay_mins": delay_mins,
         "historical_context": historical_context,
         "predicted_speed_factor": combined_speed,
-        "confidence": confidence,
+        "confidence": round(min(0.97, 0.65 + (severity / 10) * 0.35), 2),
         "affected_route": request.route,
-        "recommended_capacity": recommended_capacity
+        "recommended_capacity": RECOMMENDED_CAPACITY_BY_SEVERITY[cap_tier]
     }
 
 @app.get("/health")
@@ -194,9 +255,92 @@ def health():
         "status": "ok",
         "service": "FleetPredict AI Microservice",
         "port": 8001,
+        "gemini_enabled": gemini_client is not None,
         "models_loaded": list(ROUTE_SPEED_PROFILES.keys()),
         "faiss_index_size": len(INCIDENT_TEXTS)
     }
+
+# -----------------------------------------------------------------------------
+# Gemini Dispatch Generation
+# -----------------------------------------------------------------------------
+
+class DispatchRequest(BaseModel):
+    scenario: str   # e.g. "detroit"
+    trucks: list    # list of truck dicts
+    context: str    # human-readable situation summary
+
+@app.post("/generate-dispatch")
+async def generate_dispatch(req: DispatchRequest):
+    """Ask Gemini to generate realistic fleet dispatcher messages."""
+
+    FALLBACKS = {
+        "chicago": [
+            {"type": "system",   "text": "SCENARIO ACTIVE: CHICAGO — HoS constraints applied"},
+            {"type": "warn",     "truckId": "Truck-Alpha", "driver": "John Doe",     "prefix": "HOS ALERT",   "text": "Hours of service limit in 30 mins. Diverting to DeKalb Truck Stop. ⚠️"},
+            {"type": "dispatch", "truckId": "Truck-Beta",  "driver": "Sarah Connor", "prefix": "DISPATCH",    "text": "I-94 disrupted. Rerouting via US-41. ETA Milwaukee: 16:45. ✅"},
+            {"type": "confirm",  "text": "ALL ASSETS REROUTED — cascade prevented. ✅"},
+        ],
+        "detroit": [
+            {"type": "system",   "text": "SCENARIO ACTIVE: DETROIT — Engine fault upstream"},
+            {"type": "fault",    "truckId": "Freightliner-09", "driver": "Marcus Webb",  "prefix": "GEOTAB ALERT", "text": "IMMOBILIZED at I-90 mile marker 94. Engine derate. Emergency services notified. 🔴"},
+            {"type": "dispatch", "truckId": "Kenworth-14",     "driver": "Priya Anand",  "prefix": "DISPATCH",    "text": "Upstream fault detected. Rerouting via I-80 South. ETA Cleveland: 17:20. ✅"},
+            {"type": "dispatch", "truckId": "Peterbilt-22",    "driver": "Luis Herrera", "prefix": "DISPATCH",    "text": "Speed reduced — incident upstream. Proceed via I-80 alternate. ETA: 17:35. ✅"},
+            {"type": "confirm",  "text": "CASCADE PREVENTED — 11 trucks rerouted successfully. ✅"},
+        ],
+        "indianapolis": [
+            {"type": "system",   "text": "SCENARIO ACTIVE: INDIANAPOLIS — Weight restrictions active"},
+            {"type": "warn",     "truckId": "Heavy-Hauler-01", "driver": "Tom Briggs", "prefix": "WEIGHT ALERT", "text": "80,000 lbs gross. Rural shortcut BLOCKED. Routing via I-74. Extra 22 mins. ⚠️"},
+            {"type": "dispatch", "truckId": "Empty-Return-02", "driver": "Dana Kim",   "prefix": "DISPATCH",    "text": "14,000 kg — within bridge limits. Shortcut approved. ETA Cincinnati: 15:50. ✅"},
+            {"type": "confirm",  "text": "WEIGHT CONSTRAINTS APPLIED — fleet distributed safely. ✅"},
+        ],
+    }
+
+    if not gemini_client:
+        msgs = FALLBACKS.get(req.scenario, FALLBACKS["chicago"])
+        return {"messages": msgs, "source": "fallback"}
+
+    try:
+        truck_summary = ", ".join([
+            f"{t.get('truck_id','?')} ({t.get('status','?')}, {t.get('assigned_route','?')})"
+            for t in req.trucks[:6]
+        ])
+
+        prompt = f"""You are a real-time fleet dispatcher AI for a logistics company.
+Scenario: {req.context}
+Trucks affected: {truck_summary}
+
+Generate exactly 3 short, realistic dispatcher radio messages for this situation.
+Each message should be a JSON object with these fields:
+- type: one of "fault", "warn", "dispatch"
+- truckId: truck identifier (e.g. Truck-DET-10)
+- driver: plausible driver first and last name
+- prefix: short tag like "GEOTAB ALERT", "WEIGHT ALERT", or "DISPATCH"
+- text: the actual radio message (max 15 words, direct dispatcher style, include ETA or action)
+
+Return ONLY a JSON array of 3 objects, no explanation."""
+
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        raw = response.text.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+            raw = raw.rsplit("```", 1)[0]
+        ai_messages = json.loads(raw)
+
+        messages = [{"type": "system", "text": f"SCENARIO ACTIVE: {req.scenario.upper()} — Gemini AI dispatch generated"}]
+        messages.extend(ai_messages)
+        messages.append({"type": "confirm", "text": "ALL ASSETS REROUTED — FleetPredict cascade prevention active. ✅"})
+
+        return {"messages": messages, "source": "gemini"}
+
+    except Exception as e:
+        print(f"[Gemini] Error: {e}")
+        msgs = FALLBACKS.get(req.scenario, FALLBACKS["chicago"])
+        return {"messages": msgs, "source": "fallback"}
+
 
 # -----------------------------------------------------------------------------
 # Startup Tests and Server Run

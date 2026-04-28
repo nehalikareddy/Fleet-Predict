@@ -8,6 +8,184 @@ const path = require('path');
 
 dotenv.config();
 
+// ─── Mock Telematics Data (Samsara, Geotab) ───────────────────────────────────
+const mockTelematics = {
+  samsara_hos: {
+    data: [
+      {
+        driver: { id: "78321", name: "John Doe" },
+        vehicle: { id: "Truck-Alpha" },
+        clocks: { drive: { driveRemainingDurationMs: 14400000, drivingInViolationCycle: false } }
+      },
+      {
+        driver: { id: "99312", name: "Sarah Connor" },
+        vehicle: { id: "Truck-Beta" },
+        clocks: { drive: { driveRemainingDurationMs: 1800000, drivingInViolationCycle: false } }
+      }
+    ],
+    pagination: { hasNextPage: false }
+  },
+  geotab_faults: {
+    jsonrpc: "2.0",
+    result: [
+      {
+        id: "Fault-9921",
+        device: { id: "b12A", name: "Freightliner-09" },
+        diagnostic: { id: "DiagnosticEngineLightWarningId", name: "Critical Engine Derate - Immobilized" },
+        activeLocation: { x: -87.6298, y: 41.8781 },
+        dateTime: "2024-10-25T14:32:00.000Z",
+        faultState: "Active"
+      }
+    ]
+  },
+  samsara_weight: {
+    data: [
+      {
+        id: "21201491823",
+        name: "Heavy-Hauler-01",
+        weightTickets: { grossWeightKg: 36287, time: "2024-10-25T12:00:00Z" },
+        gps: { latitude: 41.8818, longitude: -87.6231, headingDegrees: 180, speedMilesPerHour: 65.2 }
+      },
+      {
+        id: "21201491824",
+        name: "Empty-Return-02",
+        weightTickets: { grossWeightKg: 14000, time: "2024-10-25T12:00:00Z" },
+        gps: { latitude: 41.8815, longitude: -87.6230, headingDegrees: 180, speedMilesPerHour: 65.0 }
+      }
+    ]
+  }
+};
+
+// ─── Scenario Route Definitions ───────────────────────────────────────────────
+const SCENARIO_ROUTES = {
+  scenario_1_hos: {
+    label: "HoS Compliance — Chicago → Milwaukee (I-94)",
+    origin: { lat: 41.8781, lng: -87.6298, label: "Chicago, IL" },
+    destination: { lat: 43.0389, lng: -87.9065, label: "Milwaukee, WI" },
+    highway: "I-94",
+    trucks: [
+      {
+        truck_id: "Truck-Alpha", driver: "John Doe", tier: "premium",
+        weight_tons: 12, hours_driven: 7, deadline_hour: 18,
+        startLat: 41.9200, startLng: -87.6600,
+        scenario: "scenario_1_hos", telematicsFlag: "hos_safe", hos_remaining_mins: 240
+      },
+      {
+        truck_id: "Truck-Beta", driver: "Sarah Connor", tier: "standard",
+        weight_tons: 10, hours_driven: 10.5, deadline_hour: 17,
+        startLat: 41.9500, startLng: -87.6800,
+        scenario: "scenario_1_hos", telematicsFlag: "hos_critical", hos_remaining_mins: 30
+      }
+    ]
+  },
+  scenario_2_geotab: {
+    label: "Engine Fault Chokepoint — Detroit → Cleveland (I-90)",
+    origin: { lat: 42.3314, lng: -83.0458, label: "Detroit, MI" },
+    destination: { lat: 41.4993, lng: -81.6944, label: "Cleveland, OH" },
+    highway: "I-90",
+    trucks: [
+      {
+        truck_id: "Freightliner-09", driver: "Marcus Webb", tier: "bulk",
+        weight_tons: 22, hours_driven: 5, deadline_hour: 19,
+        startLat: 42.1200, startLng: -82.5000,
+        scenario: "scenario_2_geotab", telematicsFlag: "engine_fault",
+        faultCode: "Critical Engine Derate - Immobilized"
+      },
+      {
+        truck_id: "Kenworth-14", driver: "Priya Anand", tier: "standard",
+        weight_tons: 18, hours_driven: 3, deadline_hour: 20,
+        startLat: 42.1800, startLng: -82.6500,
+        scenario: "scenario_2_geotab", telematicsFlag: "clear"
+      },
+      {
+        truck_id: "Peterbilt-22", driver: "Luis Herrera", tier: "standard",
+        weight_tons: 15, hours_driven: 4, deadline_hour: 20,
+        startLat: 42.2200, startLng: -82.8000,
+        scenario: "scenario_2_geotab", telematicsFlag: "clear"
+      }
+    ]
+  },
+  scenario_3_weight: {
+    label: "Weight Restriction — Indianapolis → Cincinnati (I-74)",
+    origin: { lat: 39.7684, lng: -86.1581, label: "Indianapolis, IN" },
+    destination: { lat: 39.1031, lng: -84.5120, label: "Cincinnati, OH" },
+    highway: "I-74",
+    trucks: [
+      {
+        truck_id: "Heavy-Hauler-01", driver: "Tom Briggs", tier: "bulk",
+        weight_tons: 40, hours_driven: 4, deadline_hour: 20,
+        startLat: 39.7000, startLng: -85.8000,
+        scenario: "scenario_3_weight", telematicsFlag: "weight_restricted", grossWeightKg: 36287
+      },
+      {
+        truck_id: "Empty-Return-02", driver: "Dana Kim", tier: "standard",
+        weight_tons: 7, hours_driven: 2, deadline_hour: 21,
+        startLat: 39.6800, startLng: -85.7500,
+        scenario: "scenario_3_weight", telematicsFlag: "weight_safe", grossWeightKg: 14000
+      }
+    ]
+  }
+};
+
+// ─── pollEnterpriseTelematics() ───────────────────────────────────────────────
+async function pollEnterpriseTelematics() {
+  return new Promise((resolve) => {
+    setTimeout(async () => {
+
+      // ── SAMSARA HoS POLLING ──
+      console.log("\n[TELEMATICS] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("[TELEMATICS] 📡 Polling Samsara API → /fleet/hos/clocks");
+      console.log("[TELEMATICS]    Route: Chicago → Milwaukee (I-94)");
+      await new Promise(r => setTimeout(r, 400));
+      const hosData = mockTelematics.samsara_hos.data;
+      hosData.forEach(driver => {
+        const minsRemaining = driver.clocks.drive.driveRemainingDurationMs / 60000;
+        if (minsRemaining < 60) {
+          console.log(`[TELEMATICS] ⚠️  ALERT: ${driver.vehicle.id} — Driver ${driver.driver.name} has ${minsRemaining} mins drive time remaining. DOT HoS constraint applied. Routing to nearest safe truck stop.`);
+        } else {
+          console.log(`[TELEMATICS] ✅ ${driver.vehicle.id} — Driver ${driver.driver.name}: ${minsRemaining} mins remaining. Eligible for full reroute.`);
+        }
+      });
+
+      // ── GEOTAB ENGINE FAULT POLLING ──
+      console.log("\n[TELEMATICS] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("[TELEMATICS] 📡 Polling Geotab API → Get<FaultData>");
+      console.log("[TELEMATICS]    Route: Detroit → Cleveland (I-90)");
+      await new Promise(r => setTimeout(r, 400));
+      const faults = mockTelematics.geotab_faults.result;
+      if (faults.length > 0) {
+        faults.forEach(fault => {
+          if (fault.faultState === "Active") {
+            console.log(`[TELEMATICS] 🔴 ENGINE FAULT DETECTED: ${fault.device.name} — "${fault.diagnostic.name}". Vehicle immobilized at [${fault.activeLocation.y}, ${fault.activeLocation.x}]. Triggering upstream cascade-prevention reroute.`);
+          }
+        });
+      } else {
+        console.log("[TELEMATICS] ✅ All active vehicles cleared. No critical engine derates detected.");
+      }
+
+      // ── SAMSARA WEIGHT TELEMETRY POLLING ──
+      console.log("\n[TELEMATICS] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("[TELEMATICS] 📡 Polling Samsara API → /fleet/vehicles/stats");
+      console.log("[TELEMATICS]    Route: Indianapolis → Cincinnati (I-74)");
+      await new Promise(r => setTimeout(r, 400));
+      const weightData = mockTelematics.samsara_weight.data;
+      weightData.forEach(vehicle => {
+        const lbs = Math.round(vehicle.weightTickets.grossWeightKg * 2.205);
+        if (vehicle.weightTickets.grossWeightKg > 18000) {
+          console.log(`[TELEMATICS] ⚠️  WEIGHT ALERT: ${vehicle.name} — Gross weight ${vehicle.weightTickets.grossWeightKg}kg (${lbs.toLocaleString()} lbs). Exceeds rural bridge limit of 40,000 lbs. Constraint: primary highway routing ONLY.`);
+        } else {
+          console.log(`[TELEMATICS] ✅ ${vehicle.name} — Gross weight ${vehicle.weightTickets.grossWeightKg}kg (${lbs.toLocaleString()} lbs). Within all bridge limits. Eligible for rural shortcut routing.`);
+        }
+      });
+
+      console.log("\n[TELEMATICS] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("[TELEMATICS] ✅ Enterprise telematics poll complete. All constraints injected into routing engine.\n");
+
+      resolve();
+    }, 800);
+  });
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -204,8 +382,10 @@ function calculateKPIs(enrichedTrucks) {
 // ─── POST /trigger-simulation (Adapter Pattern) ───────────────────────────────
 app.post('/trigger-simulation', async (req, res) => {
   const source = req.body.source || 'historical';
+  const scenario = req.body.scenario; // e.g. "chicago", "detroit", "indianapolis"
 
   try {
+    await pollEnterpriseTelematics();
     await writeToFirebase('demo-state/simulation_running', true);
 
     const trucks = JSON.parse(
@@ -223,14 +403,12 @@ app.post('/trigger-simulation', async (req, res) => {
           throw new Error("Missing TOMTOM_API_KEY");
         }
         
-        // I-94 Bounding Box (Chicago to Milwaukee roughly)
         const bbox = "41.8781,-87.9065,43.0389,-87.6298";
         const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${tomtomKey}&bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory}}}`;
         
         const ttRes = await axios.get(url, { timeout: 4000 });
         const incidents = ttRes.data.incidents || [];
         
-        // Count major incidents (e.g., accidents or extreme delays)
         const majorIncidents = incidents.filter(inc => inc.properties.iconCategory === 1 || inc.properties.iconCategory === 8).length;
         
         let weather_condition = "clear";
@@ -242,16 +420,17 @@ app.post('/trigger-simulation', async (req, res) => {
         pythonParams = { 
           route: "I-94", 
           time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), 
-          weather_condition 
+          weather_condition,
+          scenario_id: scenario
         };
       } catch (err) {
         console.log('TomTom API error or key missing, using fallback live data:', err.message);
         liveTrafficContext = "TomTom API unavailable. Falling back to simulated live traffic. ";
-        pythonParams = { route: "I-94", time: "17:00", weather_condition: "light_rain" };
+        pythonParams = { route: "I-94", time: "17:00", weather_condition: "light_rain", scenario_id: scenario };
       }
     } else {
       // Historical: fixed demo parameters
-      pythonParams = { route: "I-94", time: "17:00", weather_condition: "heavy_rain" };
+      pythonParams = { route: "I-94", time: "17:00", weather_condition: "heavy_rain", scenario_id: scenario };
     }
 
     let disruption;
@@ -275,16 +454,27 @@ app.post('/trigger-simulation', async (req, res) => {
       };
     }
 
-    await writeToFirebase('demo-state/disruption', {
-      ...disruption,
-      active: true,
-      weather_condition: pythonParams.weather_condition,
-      affected_route: "I-94",
-      historical_context: liveTrafficContext + disruption.historical_context,
-      timestamp: Date.now()
-    });
+    let enrichedTrucks;
+    if (disruption.fleet) {
+      // Detroit or Indianapolis scenario handled entirely by Python
+      enrichedTrucks = disruption.fleet;
+      await writeToFirebase('demo-state/active_scenario', scenario);
+      await writeToFirebase('demo-state/disruption', null);
+    } else {
+      // Default Chicago behavior
+      await writeToFirebase('demo-state/active_scenario', null);
+      await writeToFirebase('demo-state/disruption', {
+        ...disruption,
+        active: true,
+        weather_condition: pythonParams.weather_condition,
+        affected_route: "I-94",
+        historical_context: liveTrafficContext + disruption.historical_context,
+        timestamp: Date.now(),
+        scenarios: SCENARIO_ROUTES
+      });
+      enrichedTrucks = coordinateFleet(trucks, disruption);
+    }
 
-    const enrichedTrucks = coordinateFleet(trucks, disruption);
     const kpis = calculateKPIs(enrichedTrucks);
 
     await writeToFirebase('demo-state/fleet', enrichedTrucks);
@@ -352,6 +542,112 @@ app.post('/trigger-event', async (req, res) => {
     await writeToFirebase('demo-state/simulation_running', false).catch(console.error);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// ─── POST /onboard-fleet (Simulated Telematics Onboarding) ────────────────────
+app.post('/onboard-fleet', async (req, res) => {
+  const { provider, apiKey } = req.body;
+
+  // Simulation key validation
+  const VALID_KEY = 'samsara_fedex_fleet_xyz789';
+  const INVALID_KEY = 'samsara_test_invalid_123';
+
+  if (!apiKey || apiKey === INVALID_KEY) {
+    return res.status(401).json({
+      success: false,
+      error: 'API connection failed. Key is invalid or expired.',
+      step: 'validation'
+    });
+  }
+
+  if (apiKey !== VALID_KEY) {
+    return res.status(401).json({
+      success: false,
+      error: `Unrecognized API key for provider "${provider || 'unknown'}". Please check your credentials.`,
+      step: 'validation'
+    });
+  }
+
+  try {
+    await writeToFirebase('demo-state/simulation_running', true);
+
+    // Load Fleet B (FedEx simulation)
+    const trucks = JSON.parse(
+      fs.readFileSync(path.join(__dirname, 'fleet_b.json'), 'utf8')
+    );
+
+    // Get disruption prediction from Python AI
+    let disruption;
+    try {
+      const pythonRes = await axios.post(
+        'http://localhost:8001/predict-disruption',
+        { route: "I-94", time: "14:00", weather_condition: "light_rain" },
+        { timeout: 5000 }
+      );
+      disruption = pythonRes.data;
+    } catch (err) {
+      console.log('Python unavailable during onboarding, using fallback');
+      disruption = {
+        disrupted: false,
+        severity: 3,
+        predicted_delay_mins: 12,
+        historical_context: "Fleet B onboarded: East Coast corridor, light traffic conditions",
+        predicted_speed_factor: 0.82,
+        confidence: 0.78,
+        recommended_capacity: { "I-94": 15, "Highway-50": 10, "I-43": 8 }
+      };
+    }
+
+    await writeToFirebase('demo-state/disruption', {
+      ...disruption,
+      active: disruption.disrupted,
+      weather_condition: "light_rain",
+      affected_route: "I-95",
+      historical_context: `Fleet B (FedEx) onboarded via ${provider || 'Samsara'} API. ${disruption.historical_context}`,
+      timestamp: Date.now()
+    });
+
+    const enrichedTrucks = coordinateFleet(trucks, disruption);
+    const kpis = calculateKPIs(enrichedTrucks);
+
+    await writeToFirebase('demo-state/fleet', enrichedTrucks);
+    await writeToFirebase('demo-state/kpi', kpis);
+    await writeToFirebase('demo-state/simulation_running', false);
+
+    res.json({
+      success: true,
+      provider: provider || 'Samsara',
+      fleet_name: 'FedEx East Coast',
+      trucks_loaded: enrichedTrucks.length,
+      kpis
+    });
+  } catch (error) {
+    console.error(error);
+    await writeToFirebase('demo-state/simulation_running', false).catch(console.error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─── POST /set-scenario ───────────────────────────────────────────────────────
+app.post('/set-scenario', async (req, res) => {
+  const { scenarioKey } = req.body;
+  const scenario = SCENARIO_ROUTES[scenarioKey];
+  if (!scenario) {
+    return res.status(400).json({ error: "Unknown scenario key" });
+  }
+  const scenarioFleet = scenario.trucks.map(truck => ({
+    ...truck,
+    assigned_route: scenario.highway,
+    status: "on_time",
+    delay_mins: 0,
+    reactive_route: scenario.highway,
+    reactive_status: "on_time",
+    reactive_delay_mins: 0
+  }));
+  await db.ref("demo-state/fleet").set(scenarioFleet);
+  await db.ref("demo-state/active_scenario").set(scenarioKey);
+  await db.ref("demo-state/disruption").set(null);
+  res.json({ success: true, scenario: scenarioKey, trucks_loaded: scenarioFleet.length });
 });
 
 // ─── POST /reset ──────────────────────────────────────────────────────────────

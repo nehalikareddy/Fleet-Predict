@@ -5,10 +5,18 @@ import MapView from './components/MapView'
 import AlertBanner from './components/AlertBanner'
 import ModeToggle from './components/ModeToggle'
 import KPIPanel from './components/KPIPanel'
-import DemoControls from './components/DemoControls'
 import DiagnosticPanel from './components/DiagnosticPanel'
+import DispatchFeed from './components/DispatchFeed'
+import OnboardingPage from './components/OnboardingPage'
+import RoutesView from './components/RoutesView'
+import OverviewPanel from './components/OverviewPanel'
+import ScenarioSwitcher from './components/ScenarioSwitcher'
 
 function App() {
+  // ─── Onboarding gate ───────────────────────────────────────────────
+  const [isOnboarded, setIsOnboarded] = useState(false)
+
+  // ─── Dashboard state ───────────────────────────────────────────────
   const [mode, setMode] = useState("fleetpredict")
   const [fleetData, setFleetData] = useState([])
   const [kpiData, setKpiData] = useState({})
@@ -16,17 +24,18 @@ function App() {
   const [simulationRunning, setSimulationRunning] = useState(false)
   const [hasRunOnce, setHasRunOnce] = useState(false)
   const [selectedTruck, setSelectedTruck] = useState(null)
+  const [activeNav, setActiveNav] = useState('Fleet')
+  const [activeScenario, setActiveScenario] = useState(null)
 
+  // ─── Firebase listener ─────────────────────────────────────────────
   useEffect(() => {
     const demoRef = ref(db, 'demo-state')
     const unsub = onValue(demoRef, (snapshot) => {
       const data = snapshot.val()
       if (!data) return
 
-      // Handle fleet — null or empty means reset, array means live data
       const fleetIsEmpty = !data.fleet || (Array.isArray(data.fleet) && data.fleet.length === 0)
       if (fleetIsEmpty) {
-        // Reset was called — clear everything
         setFleetData([])
         setKpiData({})
         setDisruption({})
@@ -38,11 +47,26 @@ function App() {
       }
 
       if (data.kpi && typeof data.kpi === 'object') setKpiData(data.kpi)
-      if (data.disruption) setDisruption(data.disruption)
+      setDisruption(data.disruption || {})
       setSimulationRunning(data.simulation_running || false)
+      setActiveScenario(data.active_scenario || null)
     })
     return () => unsub()
   }, [])
+
+  // ─── Onboarding gate ───────────────────────────────────────────────
+  if (!isOnboarded) {
+    return (
+      <OnboardingPage
+        onComplete={() => setIsOnboarded(true)}
+        activeScenario={activeScenario}
+        simulationRunning={simulationRunning}
+      />
+    )
+  }
+
+  // ─── Render dashboard nav items ────────────────────────────────────
+  const navItems = ['Overview', 'Fleet', 'Routes']
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: '#e4e4e7' }}>
@@ -65,10 +89,11 @@ function App() {
 
         <div className="flex items-center gap-1">
           <nav className="flex items-center gap-0.5 mr-5">
-            {['Overview', 'Fleet', 'Routes', 'Analytics'].map((item, i) => (
+            {navItems.map((item) => (
               <button key={item}
+                onClick={() => setActiveNav(item)}
                 className="px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-all"
-                style={i === 1
+                style={activeNav === item
                   ? { background: '#f2f2f2', color: '#111111' }
                   : { color: '#999999' }
                 }
@@ -87,100 +112,164 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Content — Tab-based rendering */}
       <main className="flex flex-1 overflow-hidden p-3 gap-3">
 
-        {/* Left: Map */}
-        <div className="flex-1 h-full map-container relative">
-          <MapView
-            fleetData={fleetData}
-            mode={mode}
-            disruption={disruption}
-            onSelectTruck={setSelectedTruck}
-          />
+        {/* ─── ROUTES TAB ─── */}
+        {activeNav === 'Routes' && (
+          <RoutesView activeScenario={activeScenario} mode={mode} />
+        )}
 
-          {/* Floating route legend — only after simulation */}
-          {hasRunOnce && (
-          <div className="absolute bottom-4 left-4 z-10" style={{
-            background: 'rgba(255,255,255,0.92)',
-            backdropFilter: 'blur(8px)',
-            border: '1px solid #e8e8e8',
-            borderRadius: '12px',
-            padding: '8px 14px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-          }}>
-            <div className="flex items-center gap-4" style={{ fontSize: '11px', fontWeight: 500 }}>
-              {mode === "reactive" ? (
-                <div className="flex items-center gap-2">
-                  <div style={{ width: 12, height: 3, borderRadius: 2, background: '#dc2626' }} />
-                  <span style={{ color: '#666666' }}>Highway 50 (All Traffic)</span>
+        {/* ─── FLEET TAB (default dashboard) ─── */}
+        {activeNav === 'Fleet' && (
+          <>
+            {/* Left: Map */}
+            <div className="flex-1 h-full map-container relative">
+              <MapView
+                fleetData={fleetData}
+                mode={mode}
+                disruption={disruption}
+                onSelectTruck={setSelectedTruck}
+                activeScenario={activeScenario}
+              />
+
+              {/* Floating route legend */}
+              {hasRunOnce && (
+              <div className="absolute bottom-4 left-4 z-10" style={{
+                background: 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid #e8e8e8',
+                borderRadius: '12px',
+                padding: '8px 14px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              }}>
+                <div className="flex items-center gap-4" style={{ fontSize: '11px', fontWeight: 500 }}>
+                  {mode === "reactive" ? (
+                    <div className="flex items-center gap-2">
+                      <div style={{ width: 12, height: 3, borderRadius: 2, background: '#dc2626' }} />
+                      <span style={{ color: '#666666' }}>Single Route (Congested)</span>
+                    </div>
+                  ) : activeScenario === 'detroit' ? (
+                    <>
+                      <div className="flex items-center gap-2"><div style={{ width: 12, height: 3, borderRadius: 2, background: '#2563eb' }} /><span style={{ color: '#666666' }}>I-90</span></div>
+                      <div className="flex items-center gap-2"><div style={{ width: 12, height: 3, borderRadius: 2, background: '#16a34a' }} /><span style={{ color: '#666666' }}>I-80 Alt</span></div>
+                    </>
+                  ) : activeScenario === 'indianapolis' ? (
+                    <>
+                      <div className="flex items-center gap-2"><div style={{ width: 12, height: 3, borderRadius: 2, background: '#2563eb' }} /><span style={{ color: '#666666' }}>I-74</span></div>
+                      <div className="flex items-center gap-2"><div style={{ width: 12, height: 3, borderRadius: 2, background: '#f97316' }} /><span style={{ color: '#666666' }}>I-70 Detour</span></div>
+                      <div className="flex items-center gap-2"><div style={{ width: 12, height: 3, borderRadius: 2, background: '#16a34a' }} /><span style={{ color: '#666666' }}>US-52</span></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2"><div style={{ width: 12, height: 3, borderRadius: 2, background: '#2563eb' }} /><span style={{ color: '#666666' }}>I-94</span></div>
+                      <div className="flex items-center gap-2"><div style={{ width: 12, height: 3, borderRadius: 2, background: '#d97706' }} /><span style={{ color: '#666666' }}>US-41 Alt</span></div>
+                    </>
+                  )}
                 </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <div style={{ width: 12, height: 3, borderRadius: 2, background: '#2563eb' }} />
-                    <span style={{ color: '#666666' }}>I-94</span>
+              </div>
+              )}
+
+              {/* Floating marker legend */}
+              {hasRunOnce && (
+              <div className="absolute top-4 left-4 z-10" style={{
+                background: 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid #e8e8e8',
+                borderRadius: '12px',
+                padding: '8px 14px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              }}>
+                <div className="flex items-center gap-4" style={{ fontSize: '10px', fontWeight: 500, color: '#666666' }}>
+                  <div className="flex items-center gap-1.5">
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', opacity: 0.6 }} />
+                    <span>On-Time</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div style={{ width: 12, height: 3, borderRadius: 2, background: '#d97706' }} />
-                    <span style={{ color: '#666666' }}>Hwy 50</span>
+                  <div className="flex items-center gap-1.5">
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#d97706' }} />
+                    <span>Minor</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div style={{ width: 12, height: 3, borderRadius: 2, background: '#16a34a' }} />
-                    <span style={{ color: '#666666' }}>I-43</span>
+                  <div className="flex items-center gap-1.5">
+                    <div style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '9px solid #dc2626' }} />
+                    <span>Critical</span>
                   </div>
-                </>
+                </div>
+              </div>
+              )}
+
+              {/* Dispatch feed */}
+              {hasRunOnce && (
+                <div className="absolute bottom-4 right-4 z-10" style={{ width: '420px' }}>
+                  <DispatchFeed fleetData={fleetData} disruption={disruption} mode={mode} activeScenario={activeScenario} />
+                </div>
               )}
             </div>
-          </div>
-          )}
 
-          {/* Floating marker legend — only after simulation */}
-          {hasRunOnce && (
-          <div className="absolute top-4 left-4 z-10" style={{
-            background: 'rgba(255,255,255,0.92)',
-            backdropFilter: 'blur(8px)',
-            border: '1px solid #e8e8e8',
-            borderRadius: '12px',
-            padding: '8px 14px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-          }}>
-            <div className="flex items-center gap-4" style={{ fontSize: '10px', fontWeight: 500, color: '#666666' }}>
-              <div className="flex items-center gap-1.5">
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', opacity: 0.6 }} />
-                <span>On-Time</span>
+            {/* Right: Sidebar */}
+            <aside className="w-[340px] h-full overflow-y-auto flex flex-col gap-2.5 pr-0.5 flex-shrink-0">
+              <AlertBanner disruption={disruption} mode={mode} />
+              <ModeToggle mode={mode} onModeChange={setMode} />
+
+              {selectedTruck ? (
+                <DiagnosticPanel
+                  truck={selectedTruck}
+                  mode={mode}
+                  onClose={() => setSelectedTruck(null)}
+                />
+              ) : (
+                <KPIPanel kpiData={kpiData} mode={mode} hasRunOnce={hasRunOnce} />
+              )}
+
+              {/* Reset Control */}
+              <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
+                <button
+                  onClick={async () => {
+                    await fetch('http://localhost:3000/reset', { method: 'POST' });
+                    setIsOnboarded(false);
+                  }}
+                  style={{
+                    width: '100%', padding: '10px', borderRadius: '10px',
+                    border: '1px solid #e0e0e0', background: '#ffffff',
+                    color: '#dc2626', fontSize: '11px', fontWeight: 600,
+                    fontFamily: 'Inter, sans-serif', cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.borderColor = '#fecaca' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#e0e0e0' }}
+                >
+                  End Demo & Reset
+                </button>
               </div>
-              <div className="flex items-center gap-1.5">
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#d97706' }} />
-                <span>Minor</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '9px solid #dc2626' }} />
-                <span>Critical</span>
-              </div>
+            </aside>
+          </>
+        )}
+
+        {/* ─── OVERVIEW TAB ─── */}
+        {activeNav === 'Overview' && (
+          <>
+            {/* Left: Map (read-only view) */}
+            <div className="flex-1 h-full map-container relative">
+              <MapView
+                fleetData={fleetData}
+                mode={mode}
+                disruption={disruption}
+                onSelectTruck={setSelectedTruck}
+                activeScenario={activeScenario}
+              />
             </div>
-          </div>
-          )}
-        </div>
 
-        {/* Right: Sidebar */}
-        <aside className="w-[340px] h-full overflow-y-auto flex flex-col gap-2.5 pr-0.5 flex-shrink-0">
-          <AlertBanner disruption={disruption} mode={mode} />
-          <ModeToggle mode={mode} onModeChange={setMode} />
-
-          {/* Conditional: DiagnosticPanel or KPIPanel */}
-          {selectedTruck ? (
-            <DiagnosticPanel
-              truck={selectedTruck}
-              mode={mode}
-              onClose={() => setSelectedTruck(null)}
-            />
-          ) : (
-            <KPIPanel kpiData={kpiData} mode={mode} hasRunOnce={hasRunOnce} />
-          )}
-
-          <DemoControls simulationRunning={simulationRunning} />
-        </aside>
+            {/* Right: Overview sidebar */}
+            <aside className="w-[340px] h-full overflow-y-auto flex flex-col gap-2.5 pr-0.5 flex-shrink-0">
+              <OverviewPanel
+                fleetData={fleetData}
+                kpiData={kpiData}
+                disruption={disruption}
+                mode={mode}
+                hasRunOnce={hasRunOnce}
+              />
+            </aside>
+          </>
+        )}
 
       </main>
     </div>
