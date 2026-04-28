@@ -548,22 +548,21 @@ app.post('/trigger-event', async (req, res) => {
 app.post('/onboard-fleet', async (req, res) => {
   const { provider, apiKey } = req.body;
 
-  // Simulation key validation
-  const VALID_KEY = 'samsara_fedex_fleet_xyz789';
-  const INVALID_KEY = 'samsara_test_invalid_123';
+  // Simulation key validation — accept the demo key or any key starting with 'fleet_'
+  const VALID_KEY = 'fleet_demo_key_xyz789';
 
-  if (!apiKey || apiKey === INVALID_KEY) {
+  if (!apiKey || apiKey.trim() === '') {
     return res.status(401).json({
       success: false,
-      error: 'API connection failed. Key is invalid or expired.',
+      error: 'API connection failed. No key provided.',
       step: 'validation'
     });
   }
 
-  if (apiKey !== VALID_KEY) {
+  if (apiKey !== VALID_KEY && !apiKey.startsWith('fleet_')) {
     return res.status(401).json({
       success: false,
-      error: `Unrecognized API key for provider "${provider || 'unknown'}". Please check your credentials.`,
+      error: `Unrecognized API key. Use the demo key shown on screen.`,
       step: 'validation'
     });
   }
