@@ -191,6 +191,7 @@ app.use(cors());
 app.use(express.json());
 
 // ─── Firebase Admin Setup ─────────────────────────────────────────────────────
+let db = null;
 try {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -202,18 +203,27 @@ try {
     }),
     databaseURL: process.env.FIREBASE_DATABASE_URL
   });
+  db = admin.database();
 } catch (err) {
-  console.warn('⚠️  Firebase could not be initialized. Please check your .env file credentials.');
+  console.warn('⚠️  Firebase could not be initialized. Please check your .env file credentials in Render.');
 }
 
-const db = admin.database();
-
 async function writeToFirebase(dbPath, data) {
-  await db.ref(dbPath).set(data);
+  if (!db) return;
+  try {
+    await db.ref(dbPath).set(data);
+  } catch (err) {
+    console.error('Firebase write failed:', err);
+  }
 }
 
 async function patchFirebase(dbPath, data) {
-  await db.ref(dbPath).update(data);
+  if (!db) return;
+  try {
+    await db.ref(dbPath).update(data);
+  } catch (err) {
+    console.error('Firebase update failed:', err);
+  }
 }
 
 // ─── Route Constants & Penalty Config ────────────────────────────────────────
