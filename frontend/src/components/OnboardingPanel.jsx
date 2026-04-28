@@ -48,7 +48,7 @@ export default function OnboardingPanel({ onComplete }) {
     await new Promise(r => setTimeout(r, 1500))
 
     try {
-      const res = await fetch('http://localhost:3000/onboard-fleet', {
+      const res = await fetch(`${import.meta.env.VITE_NODE_URL || 'http://localhost:3000'}/onboard-fleet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, apiKey: apiKey.trim() }),

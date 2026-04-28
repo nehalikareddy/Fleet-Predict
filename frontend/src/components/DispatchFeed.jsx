@@ -48,7 +48,7 @@ export default function DispatchFeed({ fleetData, disruption, mode, activeScenar
     let result = { messages: [], source: 'fallback' }
     try {
       const context = CONTEXT_MAP[scenarioKey] || `Active fleet scenario: ${scenarioKey}`
-      const res = await fetch('http://localhost:8001/generate-dispatch', {
+      const res = await fetch(`${import.meta.env.VITE_AI_URL || 'http://localhost:8001'}/generate-dispatch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario: scenarioKey, trucks: fleetData.slice(0, 6), context }),

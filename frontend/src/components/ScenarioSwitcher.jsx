@@ -37,7 +37,7 @@ export default function ScenarioSwitcher({ activeScenario, simulationRunning }) 
     if (loading || simulationRunning || key === activeScenario) return
     setLoading(key)
     try {
-      await fetch('http://localhost:3000/trigger-simulation', {
+      await fetch(`${import.meta.env.VITE_NODE_URL || 'http://localhost:3000'}/trigger-simulation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: 'historical', scenario: key }),
@@ -53,7 +53,7 @@ export default function ScenarioSwitcher({ activeScenario, simulationRunning }) 
     if (loading || simulationRunning) return
     setLoading('reset')
     try {
-      await fetch('http://localhost:3000/reset', { method: 'POST' })
+      await fetch(`${import.meta.env.VITE_NODE_URL || 'http://localhost:3000'}/reset`, { method: 'POST' })
     } catch (e) {
       console.error('Reset failed:', e)
     } finally {

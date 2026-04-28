@@ -224,7 +224,7 @@ function App() {
               <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
                 <button
                   onClick={async () => {
-                    await fetch('http://localhost:3000/reset', { method: 'POST' });
+                    await fetch(`${import.meta.env.VITE_NODE_URL || 'http://localhost:3000'}/reset`, { method: 'POST' });
                     setIsOnboarded(false);
                   }}
                   style={{
