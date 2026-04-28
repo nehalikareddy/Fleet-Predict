@@ -214,9 +214,41 @@ app.post('/trigger-simulation', async (req, res) => {
 
     // ── Adapter Logic ──────────────────────────────────────────────────────
     let pythonParams;
+    let liveTrafficContext = "";
+    
     if (source === 'live') {
-      // Placeholder: will be wired to TomTom API later
-      pythonParams = { route: "I-94", time: "17:00", weather_condition: "light_rain" };
+      try {
+        const tomtomKey = process.env.TOMTOM_API_KEY;
+        if (!tomtomKey) {
+          throw new Error("Missing TOMTOM_API_KEY");
+        }
+        
+        // I-94 Bounding Box (Chicago to Milwaukee roughly)
+        const bbox = "41.8781,-87.9065,43.0389,-87.6298";
+        const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${tomtomKey}&bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory}}}`;
+        
+        const ttRes = await axios.get(url, { timeout: 4000 });
+        const incidents = ttRes.data.incidents || [];
+        
+        // Count major incidents (e.g., accidents or extreme delays)
+        const majorIncidents = incidents.filter(inc => inc.properties.iconCategory === 1 || inc.properties.iconCategory === 8).length;
+        
+        let weather_condition = "clear";
+        if (majorIncidents > 3) weather_condition = "storm";
+        else if (majorIncidents > 0) weather_condition = "light_rain";
+        
+        liveTrafficContext = `TomTom Live: Detected ${incidents.length} total incidents (${majorIncidents} major) on I-94 corridor. `;
+        
+        pythonParams = { 
+          route: "I-94", 
+          time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }), 
+          weather_condition 
+        };
+      } catch (err) {
+        console.log('TomTom API error or key missing, using fallback live data:', err.message);
+        liveTrafficContext = "TomTom API unavailable. Falling back to simulated live traffic. ";
+        pythonParams = { route: "I-94", time: "17:00", weather_condition: "light_rain" };
+      }
     } else {
       // Historical: fixed demo parameters
       pythonParams = { route: "I-94", time: "17:00", weather_condition: "heavy_rain" };
@@ -248,6 +280,7 @@ app.post('/trigger-simulation', async (req, res) => {
       active: true,
       weather_condition: pythonParams.weather_condition,
       affected_route: "I-94",
+      historical_context: liveTrafficContext + disruption.historical_context,
       timestamp: Date.now()
     });
 
@@ -324,9 +357,11 @@ app.post('/trigger-event', async (req, res) => {
 // ─── POST /reset ──────────────────────────────────────────────────────────────
 app.post('/reset', async (req, res) => {
   try {
+    // Firebase deletes empty arrays, so we write a null sentinel for fleet
+    // which the frontend maps to "clear state"
     await writeToFirebase('demo-state', {
-      fleet: [],
-      kpi: {},
+      fleet: null,
+      kpi: null,
       disruption: { active: false },
       simulation_running: false
     });

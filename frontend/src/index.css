@@ -1,0 +1,207 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #e4e4e7;
+  color: #111111;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 100px; }
+::-webkit-scrollbar-thumb:hover { background: #bbbbbb; }
+
+/* Card base */
+.card {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: #d4d4d4;
+}
+
+/* Metric card */
+.metric-card {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+  transition: all 0.25s ease;
+}
+
+.metric-card:hover {
+  background: #fafafa;
+  border-color: #d4d4d4;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+}
+
+/* Mode button */
+.mode-btn {
+  border-radius: 12px;
+  padding: 14px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  outline: none;
+  font-family: 'Inter', sans-serif;
+}
+
+.mode-btn-reactive-active {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.mode-btn-reactive-inactive {
+  background: #fafafa;
+  border-color: #e8e8e8;
+  color: #999999;
+}
+
+.mode-btn-fp-active {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #16a34a;
+}
+
+.mode-btn-fp-inactive {
+  background: #fafafa;
+  border-color: #e8e8e8;
+  color: #999999;
+}
+
+/* Trigger button */
+.trigger-btn {
+  background: #111111;
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  padding: 13px 24px;
+  width: 100%;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  transition: all 0.2s ease;
+}
+
+.trigger-btn:hover:not(:disabled) {
+  background: #222222;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+
+.trigger-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.reset-btn {
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  color: #888888;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  padding: 11px 24px;
+  width: 100%;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.reset-btn:hover {
+  background: #f0f0f0;
+  border-color: #d4d4d4;
+  color: #555555;
+}
+
+/* Alert banner */
+.alert-banner {
+  background: #ffffff;
+  border: 1px solid #fecaca;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* Savings card */
+.savings-card {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  padding: 18px;
+  text-align: center;
+}
+
+/* Pill badge */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Live pulse */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  background: #16a34a;
+  border-radius: 50%;
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+}
+
+/* Map container */
+.map-container {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid #e8e8e8;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.04);
+}
+
+/* InfoWindow overrides — keep dark for contrast on light map */
+.gm-style .gm-style-iw-c {
+  border-radius: 14px !important;
+  padding: 0 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+  background: #ffffff !important;
+  border: 1px solid #e8e8e8 !important;
+}
+.gm-style .gm-style-iw-d {
+  overflow: auto !important;
+  padding: 0 !important;
+}
+.gm-style .gm-style-iw-tc::after {
+  background: #ffffff !important;
+}
+.gm-style button.gm-ui-hover-effect {
+  top: 4px !important;
+  right: 4px !important;
+}
