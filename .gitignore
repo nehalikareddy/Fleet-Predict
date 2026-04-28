@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment variables — contains secret Firebase keys, NEVER commit this
+.env
+
+# Firebase service account key — also secret
+*.json.key
+fleetpredict-*.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
